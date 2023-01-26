@@ -1,0 +1,386 @@
+---
+title: "Diabetes Prediction"
+author: "Cole Odegard"
+date: 'December 11th 2022'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, message = FALSE, warning = FALSE, cache = TRUE)
+```
+
+#  Introduction
+
+Diabetes costs an estimated $327 Billion per year in the United States alone (CDC). It is a disease that is on the rise, now affecting more than 37 million Americans (CDC). This paper will explore 3 separate data sets and build 3 unique models based on those data sets. Models will be compared to each other based on accuracy using success rate and other model features such as number of model variables and size of respective data sets.<br>
+
+#  Diabetes Model 1
+
+```{r}
+library(tidyverse)
+diabetes <- read.csv("diabetes.csv")
+insMod <- glm(Outcome ~ ., data=diabetes, family = "binomial")
+#summary(insMod)
+#step(insMod, test="LRT")
+allMod <- glm(Outcome~Age+BloodPressure+Pregnancies+BMI+Glucose, 
+              data = diabetes, family = "binomial")
+#summary(allMod)
+insPred <- diabetes %>% 
+  mutate(
+    training_predictions = predict.glm(allMod, newdata=diabetes, type="response"),
+    predicted_class = ifelse(training_predictions < 0.5, "Predicted Not Diabetic", "Predicted Diabetic"),
+    ins_class = ifelse(Outcome == 0, "Is Not Diabetic","Is Diabetic")
+  ) 
+(bal_c_m <- table(insPred$ins_class, insPred$predicted_class))
+bal_s_r <- sum(diag(bal_c_m)) / nrow(diabetes)
+#bal_s_r
+diabetes$Outcome <- as.factor(diabetes$Outcome)
+ggplot(data=diabetes, aes(x=Glucose)) +
+  geom_density(aes(fill=as.factor(Outcome)), alpha=0.4)+
+  labs(y="Diabetes", x = "Glucose", title = "Figure 1: Density Plot of Glucose")
+ggplot(data = insPred, aes(x = Glucose, y = Outcome)) + 
+  geom_point(color = "blue")+
+  geom_smooth(aes(y = training_predictions),se = F)+
+  labs(title = "Figure 2: Glucose Levels vs Outcome")
+
+```
+
+  Success Rate: 77.5%<br>
+    Using deviance as our determining factor we eliminated SkinThickness and Insulin from our model. The cutoff rate to determine whether or not a person would be predicted diabetic was 50%, which is the same cutoff rate used for the next two models as well. This model had a false positive rate of 20.1% which slightly higher than we would like, but we will make improvements on this rate in our next two models. Glucose and BMI were the most accurate predictors in our model followed by Pregnancies, Blood Pressure and Age, again based on both decreases in our residual deviance and p-values of the coefficients. Glucose was our best predictor for this model, and is shown in Figure 1. Figure 2 shows Glucose vs Outcome with our model overlaid.<br>
+    Our model is shown below:<br>
+  $probability = \frac{e^{-7.96+.02*Age-.01*BloodPressure+.12*Pregnancies+.09*BMI+.03*Glucose}}{(1+e^{-7.96+.02*Age-.01*BloodPressure+.12*Pregnancies+.09*BMI+.03*Glucose}}$<br>
+  Our first model for probability of diabetes is based on 5 factors. These factors are:<br>       
+  -Age<br>
+  -Blood Pressure<br>
+  -Pregnancies<br>
+  -BMI<br>
+  -Glucose<br>
+
+  Of these factors, Age, Pregnancies, BMI, and Glucose increase the probability that someone will be diabetic, while Blood Pressure decreases this probability.<br>
+  Even though the number of pregnancies has the highest coefficient, a persons BMI, Age and Glucose have an arguably greater impact. This is because pregnancy values will usually not exceed 3, while age, BMI and glucose all go much higher. A 70 year old who has never had kids is 12% more likely to be diabetic than a woman who has had 4 kids.<br>
+  Next we will perform a hypothesis test to determine if this model produces a success rate that is statistically significant<br>
+  
+```{r}
+p = (437+63)/(437+63+158+110)
+phat = .7747396
+n = 768
+ci = .95
+A = 0.05
+stddevphat = sqrt((p*(1-p))/n)  
+standarderrornull = sqrt(p*(1-p)/n)
+Z = (phat-p)/standarderrornull #standard error
+#Z
+pvalue = 1-pnorm(Z)
+#pvalue
+```
+   
+  P = .65 (assuming every person is not diabetic)<br>
+  Model Success Rate: 77%<br>
+  H0: p = .65<br>
+  HA: p > .65<br>
+  P-value: 3.191891e-13<br>
+  The hypothesis test yielded a Z score of 7.2 and a p-value of 3.19*10^-13. Both of these figures give us enough information to reject our null hypothesis and conclude that our models improvement on the simple assumption that everyone in the data set is not diabetic is statistically significant.<br>
+
+
+#  Diabetes Model 2
+
+##  Part I--Model Creation
+
+```{r}
+library(tidyverse)
+diabetes <- read.csv("diabetes2.csv")
+diabetesClean <- diabetes %>% 
+  mutate(Smoking = ifelse(Smoking == "yes",1,0),
+         Diabetic = ifelse(Diabetic == "yes",1,0),
+         Alcohol = ifelse(Alcohol == "yes",1,0),
+         FamilyDiabetes = ifelse(FamilyDiabetes=="yes",1,0),
+         highBP = ifelse(highBP == "yes",1,0),
+         PhysicallyActive = as.factor(PhysicallyActive),
+         RegularMedicine = ifelse(RegularMedicine == "yes",1,0),
+         JunkFood = as.factor(JunkFood),
+         Stress = as.factor(Stress),
+         BPLevel = as.factor(BPLevel),
+         Age = as.factor(Age),
+         UrinationFreq = as.factor(UriationFreq))         
+taskMod <- glm(Diabetic ~ ., data=diabetesClean, family = "binomial")
+
+#summary(taskMod)
+#step(taskMod, test="LRT")
+taskMod2 <- glm(Diabetic ~ RegularMedicine+Age+FamilyDiabetes+PhysicallyActive+BPLevel+SoundSleep+Pregancies+Smoking+Gender,data=diabetesClean, family = "binomial")
+#summary(taskMod2)
+taskMod3 <- glm(Diabetic ~ RegularMedicine+Age+FamilyDiabetes+PhysicallyActive+SoundSleep+Pregancies+Smoking+Gender,data=diabetesClean, family = "binomial")
+#summary(taskMod3)
+allMod <- taskMod3
+diabetes <- diabetesClean
+insPred <- diabetes %>% 
+  mutate(
+    training_predictions = predict.glm(allMod, newdata=diabetes, type="response"),
+    predicted_class = ifelse(training_predictions < 0.5, "Predicted Not Diabetic", "Predicted Diabetic"),
+    ins_class = ifelse(Diabetic == 0, "Is Not Diabetic","Is Diabetic")
+  ) 
+(bal_c_m <- table(insPred$ins_class, insPred$predicted_class))
+bal_s_r <- sum(diag(bal_c_m)) / nrow(diabetes)
+#bal_s_r
+diabetes$Diabetic <- as.factor(diabetes$Diabetic)
+ggplot(data = insPred, aes(x = BMI, y = Diabetic)) + 
+  geom_jitter(color = "blue")+
+  geom_smooth(aes(y = training_predictions),se = F)+
+  labs(title = "Figure 3: BMI vs Diabetes")
+
+```
+
+Success Rate: 85.8%<br>  
+  Using Deviance as our determining factor we eliminated 9 variables from our second model. Regular Med Usage and Age were the strongest predictors of diabetes in this new model based on reductions in the Residual Deviance. This data set required the re-creation of most categorical variables including Alcohol, Smoking, highBP and others. Our model had a false positive rate of 7.9%, which is a large improvement over our first model and much lower than our false negative rate (16.2%). This is important in the context of diabetes prediction, in which we want a lower false positive rate. This is because it is better to test patients and determine they do not have diabetes, than to assume that they do not have diabetes only to later learn they did. <br>   
+    Our model is shown below:<br>  
+$probability = \frac{e^{-4.55+2.6*Med-1.91*Age1+.37*Age2+1.86*Age3+1.28*FD+.75*PA1+.52*PA2+1.39*PA3+.13*Sleep+.33*Pregnancies+1.38*Smoking+.46*Gender}}{(1+e^{-4.55+2.6*Med-1.91*Age1+.37*Age2+1.86*Age3+1.28*FD+.75*PA1+.52*PA2+1.39*PA3+.13*Sleep+.33*Pregnancies+1.38*Smoking+.46*Gender})}$<br>   
+  Our Final Model Uses 8 of the 17 Variables in the data set. Descriptions for these variables are below:<br>      
+  Med: Regular Medicine Usage<br>
+  Age1: <40 Years Old<br>
+  Age2: 50-59 Years Old<br>
+  Age3: 60+ Years Old<br>
+  FD: Family History of Diabetes<br>
+  PA1: Not Physically Active<br>
+  PA2: Physically Active More Than 30 Minutes<br>
+  PA3: Physically Active More Than 1 Hour<br>
+  Sleep: Hours of Sound Sleep Nightly<br>
+  Pregnancies: Number of Pregnancies<br>
+  Smoking: Do they Smoke?<br>
+  Gender: Are they Male?<br>
+ 
+  Most coefficients in this new model are bigger than in our first model because we are dealing with numerous categorical variables. The smallest coefficient is on Sleep, which is the only numerical variable in this model. Regular Med Usage, Smoking and being over 60 years old are the highest increases in the probability someone is diabetic. The only coefficient that decreases the risk of being diabetic in this model is having an age under 40.<br>   
+    Finally, we will again perform a hypothesis test to determine if this model produces a success rate that is statistically significant.<br>    
+  
+```{r}
+p = (1-.2794)
+phat = 0.8581933
+n = 952
+ci = .95
+A = 0.05
+stddevphat = sqrt((p*(1-p))/n)  
+standarderrornull = sqrt(p*(1-p)/n)
+Z = (phat-p)/standarderrornull #standard error
+#Z
+pvalue = 1-pnorm(Z)
+#pvalue
+```
+  
+  P = .72 (assuming every person is not diabetic)<br>  
+  Model Success Rate: 86%<br>  
+  H0: p = .72<br>      
+  HA: p > .72<br>    
+  P-value: 0<br>  
+  Z-Score: 9.46<br>      
+  The hypothesis test yielded a Z score of 9.46 and a p-value of 0. Both of these figures give us enough information to reject our null hypothesis and conclude that our new model improves on the assumption that everyone in the data set is not diabetic by a statistically significant margin.<br> 
+  
+
+## Part II--Model Comparison
+
+#### Model 1  
+
+  $probability = \frac{e^{-7.96+.02*Age-.01*BloodPressure+.12*Pregnancies+.09*BMI+.03*Glucose}}{1+e^{-7.96+.02*Age-.01*BloodPressure+.12*Pregnancies+.09*BMI+.03*Glucose}}$<br>  
+
+#### Model 2  
+  $probability = \frac{e^{-4.55+2.6*Med-1.91*Age1+.37*Age2+1.86*Age3+1.28*FD+.75*PA1+.52*PA2+1.39*PA3+.13*Sleep+.33*Pregnancies+1.38*Smoking+.46*Gender}}{1+e^{-4.55+2.6*Med-1.91*Age1+.37*Age2+1.86*Age3+1.28*FD+.75*PA1+.52*PA2+1.39*PA3+.13*Sleep+.33*Pregnancies+1.38*Smoking+.46*Gender}}$<br>
+  
+#### Comparing Models  
+  We have now built two models, based on two different sets of data, with numerous different coefficients for the risk of diabetes. The first model uses 5 variables and has Blood Pressure, BMI and Glucose as unique predictors. The second model uses 7 variables, and has Medicine Usage, Smoking, Family History of Diabetes, Gender, Physical Activity, and Sleep as unique predictors. We can see that Age and Number of Pregnancies are the only two variables that both models use, with Age being a categorical variable in our second model. In both models Age and Number of Pregnancies increase the risk of diabetes, and both models generally include factors that increase the risk of diabetes. We can see that the coefficients in the second model are much larger than in the first model, this is because we are dealing with primarily numerical factors in the first model. Inputs to Model 2 will only be above 1 for Number of Hours of Sleep. The second model uses more variables and is 8.3% more accurate than our first model. Both models are statistically better than just assuming that every person is not diabetic. Even though Model 2 is more accurate, it had more data points and columns of data to work with, and should be expected to perform better.<br>
+
+
+#  Diabetes Model 3
+
+##  Part I--Model Creation
+
+
+```{r}
+library(tidyverse)
+diabetes3 <- read.csv("diabetesTask3Given.csv")
+diabetes4 <- diabetes3 %>% mutate(
+  HighBP = as.factor(HighBP),
+  HighChol = as.factor(HighChol),
+  Sex = as.factor(Sex),
+  Education = as.factor(Education),
+  Income = as.factor(Income))
+
+diabetes5 = diabetes4 %>% mutate(
+  ageNew = ifelse(age == '30-39',35,ifelse(age == '40-49',45,ifelse(age == '50-59',55,ifelse(age == '60-69',65,ifelse(age == '70-79',75,85))))),
+  GeneralHealthNew = ifelse(GeneralHealth == 'excellent',4,ifelse(GeneralHealth == 'very good',3, ifelse(GeneralHealth == 'good',2,ifelse(GeneralHealth == 'fair',1,0)))),
+  SexNew = ifelse(Sex == 'female',0,1),
+  Income = ifelse(Income == "Less than $15K",15,ifelse(Income == "Less than $20K",20,ifelse(Income == "Less Than $25K",25,ifelse(Income == "Less than $35K",35,ifelse(Income == "Less than $50K",50, ifelse(Income == "Less than $75K",75,100))))))
+  )
+#summary(diabetes5)
+set.seed(123)
+trainingRows <- sample( 1:nrow(diabetes3), size = floor(0.80*nrow(diabetes3)),replace=FALSE)
+training <- diabetes5[trainingRows, ]
+testing <- diabetes5[-trainingRows, ]
+#summary(training)
+#taskMod <- glm(Diabetes_binary ~ ., data=training, family = "binomial")
+
+#summary(taskMod)
+#step(taskMod, test="LRT")
+taskMod2 <- glm(Diabetes_binary ~GeneralHealthNew+BMI+HighBP+HighChol+ageNew+CholCheck+SexNew+HeartDiseaseorAttack+Income+HvyAlcoholConsump+PhysHlth,data=training, family = "binomial")
+#summary(taskMod2)
+allMod <- taskMod2
+diabetes <- training
+#nrow(training)
+insPred <- training %>% 
+  mutate(
+    training_predictions = predict.glm(allMod, newdata=training, type="response"),
+    predicted_class = ifelse(training_predictions < 0.5, "Predicted Not Diabetic", "Predicted Diabetic"),
+    ins_class = ifelse(Diabetes_binary == 0, "Is Not Diabetic","Is Diabetic")
+  ) 
+(bal_c_m <- table(insPred$ins_class, insPred$predicted_class))
+#bal_s_r <- sum(diag(bal_c_m)) / nrow(training)
+#bal_s_r
+ggplot(data = insPred, aes(x = BMI, y = Diabetes_binary))+ 
+  geom_point(aes(color = as.factor(HeartDiseaseorAttack))) + 
+  geom_smooth(aes(y = training_predictions),se = F)+
+  labs(color = "Heart Disease/Attack", y = "Diabetes",x = "BMI",title = "Figure 4: BMI vs Diabetes With Model")
+
+```
+
+
+  Our Final Data set was narrowed down to 11 variables out of the original 21. We once again narrowed down variables by reductions in residual deviance. We also modified Income, age, general health, and sex to be numeric variables. The result was easier coefficients to quantify, with these four predictors now having one coefficient. Figure 4 shows our model overlaid on top of BMI vs Diabetes. BMI was our most accurate numeric predictor. Again for comparability of our three models we kept the cutoff rate of 50% to determine whether or not a patient has diabetes, which yielded a false positive rate of 25.1%, which is only slightly better than our false negative rate of 26.5%. <br>  
+
+  Testing Success Rate: 72.1%<br>  
+  Training Success Rate: 74.2%<br>  
+
+  $Probability = \frac{e^{-2.09-.57*GH+.07*BMI-.93*NHBP-.66*NHC+.02*Age+1.22*CC+.27*Sex+.33*HDOA-.004*Income-.55*HAC-.01*PhysHlth}}{1+e^{-2.09-.57*GH+.07*BMI-.93*NHBP-.66*NHC+.02*Age+1.22*CC+.27*Sex+.33*HDOA-.004*Income-.55*HAC-.01*PhysHlth}}$<br>
+
+  Our final model is above and descriptions for the variable names are below:<br>
+  GH-Numerical variable for General health 0 being poor 4 being excellent<br>
+  BMI-Body Mass Index<br>
+  NHBP-Not High Blood Pressure<br>
+  NHC-Not High Cholesterol<br>
+  Age-Age as a number (30-39 age group as 35, 40-49 as 45, etc.)<br>
+  CC-Cholesterol Check<br>
+  Sex-1 = Male, 0 = Female<br>
+  HDOA - Heart Disease or a Heart Attack<br>
+  Income - Number for income level (less than 15k as 15, less than 35k as 35, over 75k as 100, etc.)<br>
+  HAC-Heavy Alcohol Consumption (14+drinks/wk for men 7+drinks/wk for women)<br>
+  PhysHlth-How many days in the past 30 was your Physical Health not good?<br>
+
+  Next we will test our model training and testing success rates for significance:<br>
+
+
+```{r}
+p = .5022
+phat = .721
+n = 4000
+stddevphat = sqrt((p*(1-p))/n)  
+standarderrornull = sqrt(p*(1-p)/n)
+Z = (phat-p)/standarderrornull #standard error
+#Z
+pvalue = 1-pnorm(Z)
+#pvalue
+```
+     
+  P = .50 (assuming every person is diabetic)<br>
+  Model Testing/Training Success Rates: 72%/74%<br>
+  H0: p = .5<br>
+  HA: p > .5<br>
+  Z Scores: 30.33, 27.68<br>
+  P-Values: 0, 0<br>
+  The hypothesis test yielded Z scores of 30.33 and 27.68 and a p-value of 0. Based on these figures we can confidently reject our null hypothesis that our success rate is the same as just assuming that every person in our data set is diabetic.<br>
+
+##  Part II--Model Predictions
+
+
+```{r}
+library(tidyverse)
+diabetes3 <- read.csv("diabetesTask3Given.csv")
+diabetes4 <- diabetes3 %>% mutate(
+  HighBP = as.factor(HighBP),
+  HighChol = as.factor(HighChol),
+  Sex = as.factor(Sex),
+  Education = as.factor(Education),
+  Income = as.factor(Income),
+  age = age)
+diabetes5 = diabetes4 %>% mutate(
+  ageNew = ifelse(age == '30-39',35,ifelse(age == '40-49',45,ifelse(age == '50-59',55,ifelse(age == '60-69',65,ifelse(age == '70-79',75,85))))),
+  GeneralHealthNew = ifelse(GeneralHealth == 'excellent',4,ifelse(GeneralHealth == 'very good',3, ifelse(GeneralHealth == 'good',2,ifelse(GeneralHealth == 'fair',1,0)))),
+  SexNew = ifelse(Sex == 'female',0,1),
+  Income = ifelse(Income == "Less than $15K",15,ifelse(Income == "Less than $20K",20,ifelse(Income == "Less Than $25K",25,ifelse(Income == "Less than $35K",35,ifelse(Income == "Less than $50K",50, ifelse(Income == "Less than $75K",75,100))))))
+) %>% select(-GeneralHealth, -age,-Sex)
+
+set.seed(123)
+trainingRows <- sample( 1:nrow(diabetes3), size = floor(0.80*nrow(diabetes3)),replace=FALSE)
+training <- diabetes5[trainingRows, ]
+testing <- diabetes5[-trainingRows, ]
+taskMod2 <- glm(Diabetes_binary ~GeneralHealthNew+BMI+HighBP+HighChol+ageNew+CholCheck+SexNew+HeartDiseaseorAttack+Income+HvyAlcoholConsump+PhysHlth,data=training, family = "binomial")
+
+diabetesP <- read.csv("diabetesTask3Mystery.csv")
+diabetesP2 <- diabetesP %>% mutate(
+  HighBP = as.factor(HighBP),
+  HighChol = as.factor(HighChol),
+  Sex = as.factor(Sex),
+  Education = as.factor(Education),
+  Income = as.factor(Income),
+  age = age)
+diabetesP3 = diabetesP2 %>% mutate(
+  ageNew = ifelse(age == '30-39',35,ifelse(age == '40-49',45,ifelse(age == '50-59',55,ifelse(age == '60-69',65,ifelse(age == '70-79',75,85))))),
+  GeneralHealthNew = ifelse(GeneralHealth == 'excellent',4,ifelse(GeneralHealth == 'very good',3, ifelse(GeneralHealth == 'good',2,ifelse(GeneralHealth == 'fair',1,0)))),
+  SexNew = ifelse(Sex == 'female',0,1),
+  Income = ifelse(Income == "Less than $15K",15,ifelse(Income == "Less than $20K",20,ifelse(Income == "Less Than $25K",25,ifelse(Income == "Less than $35K",35,ifelse(Income == "Less than $50K",50, ifelse(Income == "Less than $75K",75,100))))))
+) %>% select(-GeneralHealth, -age,-Sex)
+
+allMod <- taskMod2
+diabetes <- diabetesP3
+insPred <- diabetes %>% 
+  summarize(
+    ID = ID,
+    PredictionProb = predict.glm(allMod, newdata=diabetes, type="response"),
+    PredictionBinary = ifelse(PredictionProb >=.5,1,0),
+    PredictionCategory = ifelse(PredictionProb < 0.5, "predicted not diabetes", "predicted diabetes")
+  ) 
+```
+
+
+##  Part III--Comparing All Models
+
+### Model 1  
+
+  $probability = \frac{e^{-7.96+.02*Age-.01*BloodPressure+.12*Pregnancies+.09*BMI+.03*Glucose}} {1+e^{-7.96+.02*Age-.01*BloodPressure+.12*Pregnancies+.09*BMI+.03*Glucose}}$<br>
+
+  Success Rate: 77.5%<br>
+  Rows: 762<br>
+  Variables: 5(/7)<br>
+  
+### Model 2  
+  $probability = \frac{e^{-4.55+2.6*Med-1.91*Age1+.37*Age2+1.86*Age3+1.28*FD+.75*PA1+.52*PA2+1.39*PA3+.13*Sleep+.33*Pregnancies+1.38*Smoking+.46*Gender}}{1+e^{-4.55+2.6*Med-1.91*Age1+.37*Age2+1.86*Age3+1.28*FD+.75*PA1+.52*PA2+1.39*PA3+.13*Sleep+.33*Pregnancies+1.38*Smoking+.46*Gender}}$<br>
+   
+  Success Rate: 85.6%<br>
+  Rows: 952<br>
+  Variables: 8(/17)<br>
+  
+### Model 3   
+
+  $Probability = \frac{e^{-2.09-.57*GH+.07*BMI-.93*NHBP-.66*NHC+.02*Age+1.22*CC+.27*Sex+.33*HDOA-.004*Income-.55*HAC-.01*PhysHlth}}{1+e^{-2.09-.57*GH+.07*BMI-.93*NHBP-.66*NHC+.02*Age+1.22*CC+.27*Sex+.33*HDOA-.004*Income-.55*HAC-.01*PhysHlth}}$<br>
+
+  Success Rate: 74.2%<br>
+  Rows: 4000<br>
+  Variables: 11(/21)<br>
+  
+  Looking at all three models we may be tempted to declare Model 2 the most accurate, with the highest success rate of all of our models (85.6%). However Model 2 is also the model with the highest default success rate, meaning if you just assumed everyone in Model 2's data set was not diabetic you would be right 72% of the time. If we look at the difference between our default success rate and our 3 Model success rates we see that Model 3 makes the greatest improvements (24%) followed by Models 2 and 1 (14% and 12%). However this is also misleading, since Model 3 has two extra variables and 3000+ more data points than the other two models.<br>
+    Instead of comparing models based on success it is more effective to compare them based on their similarities. All three models use some form of age and the two models that have gender/sex as a column incorporate that. Blood Pressure, Number of Pregnancies and various categorical variables to quantify lifestyle health are the other variables that are used in two or more models. Comparing coefficients we can see that Model 2 has the highest coefficients because its variables are generally either 0 or 1, while Model 1 has the lowest coefficients, which are all attached to numeric variables. Model 1 and 3 both had the same coefficient for Age when taken as a numeric value (.02), but all other coefficients varied based on how many similar factors were in each model. Similar factors would be factors that are correlated to each other.<br>
+      
+#  Data Mining--Ethical Considerations
+
+   The ethical implications of mining healthcare data are at best numerous and at worst highly controversial. Healthcare data is one of the highest legally and culturally guarded subsets of data in the United States. Americans do not like any of their personal data to be compromised, but healthcare data leaks can be especially damaging to user privacy and safety. Despite these considerations, healthcare mining could be extremely valuable moving forward. According to USF Health Online, anonymous data mining in healthcare could cut healthcare costs by 12-17% across the board, or roughly $500 billion dollars.<br> 
+       Data Scientist Vinod Khosla claims that, "In the next 10 years, Data Science... will do more for medicine than all of the biological sciences together," a bold claim that is based on Data Science's ability to make healthcare more efficient and less costly. Data Mining, when done anonymously, can also help identify patients with risk of developing diseases, identify healthcare fraud, aid research and development and enhance clinical trials (Valleywood AI). The question moving forward is not "Will Data Mining help the healthcare industry?" but rather, "Will the benefits of Data Mining outweigh the inevitable risk to user privacy caused by storing large volumes of user data online?" These risks are reduced by removing Personally Identifiable Information (PII), but any user data can be used to narrow down subsets of data and potentially identify patients, especially with rare diseases. Anonymous Data Mining is ethical, but risky depending on how greatly user confidentiality is valued.<br>
+   
+   
+#  Conclusion
+
+  In conclusion we can say that Age, Gender, Blood Pressure, Number of Pregnancies, and various lifestyle choices all affect a person's risk of developing diabetes, but to what extent each of these matters depends on the sample we look at and the way we classify each variable. Even though we created three very distinct models based on our data sets, we were able to make statistically significant improvements on all of our default success rates, and these improvements were very similar to each other when we take into account the size differences of our three data sets. It is interesting that we can make three models that have very few similarities and yet have very similar measures of success.<br>
+
+
+#  Works Cited  
+  
+  AI, V. (2022, May 29). Data mining in Healthcare. Medium. Retrieved November 30, 2022, from https://medium.com/plain-simple-software/data-mining-in-healthcare-e42656e389a7 <br>
+
+  Centers for Disease Control and Prevention. (2022, January 24). The facts, stats, and impacts of diabetes. Centers for Disease Control and Prevention. Retrieved November 30, 2022, from https://www.cdc.gov/diabetes/library/spotlights/diabetes-facts-stats.html <br>
+
+  Data mining in healthcare: Purpose, benefits, and applications. USF Health Online. (2021, November 16). Retrieved November 30, 2022, from https://www.usfhealthonline.com/resources/healthcare-analytics/data-mining-in-healthcare/ <br>
